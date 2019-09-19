@@ -1,0 +1,162 @@
+using System.Collections;
+using System.Collections.Generic;
+using System.Threading;
+using UnityEngine;
+
+// To enable System.IO.Ports 
+// Edit -> Project Settings -> Player Settings -> Other Settings -> Configuration -> Api Compatibility Level* -> .NET 4.x
+using System.IO.Ports;
+using KRN;
+
+
+public class SerialCommunication : MonoBehaviour
+{
+
+    public enum DataBitsType
+    {
+        Five = 5, Six = 6, Seven = 7, Eight = 8, Nine = 9
+    }
+
+    // Declaration of variables
+    public SerialPort arduinoPort;
+
+    // GUI for my script
+    [Tooltip("Port name with which the SerialPort object will be created.")]
+    public string portName = "COM4";
+
+    [Tooltip("Baud rate that the serial device is using to transmit data.")]
+    public int baudRate = 115200;
+
+    [Tooltip("Parity is a method of detecting errors in transmission. " +
+        "More information: https://en.wikipedia.org/wiki/Serial_port")]
+    public Parity parityType = Parity.None;
+
+    [Tooltip("Stop bits sent at the end of every character allow the receiving signal hardware to detect the end of a character and to resynchronise with the character stream. " +
+    "More information: https://en.wikipedia.org/wiki/Serial_port")]
+    public StopBits stopBitsType = StopBits.One;
+
+    [Tooltip("The number of data bits in each character. " +
+    "More information: https://en.wikipedia.org/wiki/Serial_port")]
+    public DataBitsType dataBitsType = DataBitsType.Eight;
+
+    [Tooltip("Handshake is an automated process of negotiation between two communicating in between participants. " +
+    "More information: https://en.wikipedia.org/wiki/Serial_port")]
+    public Handshake handshakeType = Handshake.None;
+
+    [Tooltip("The number of milliseconds before a time-out occurs when a read operation does not finish (Default: -1). ")]
+    [Range(-1, 500)]
+    public int readTimeout = -1;
+
+    [Tooltip("The number of milliseconds before a time-out occurs. The default is InfiniteTimeout (-1). " +
+    "More Information: https://docs.microsoft.com/en-us/dotnet/api/system.io.ports.serialport.writetimeout?view=netframework-4.8")]
+    [Range(-1, 500)]
+    public int writeTimeout = -1;
+
+
+    public readonly object toWriteLock = new object();
+
+    public string toWrite;
+
+
+    private string oldToWrite;
+    private string end;
+
+    private Thread portWritingThread;
+    private bool quitting;
+
+
+    private double averageTime;
+    private int iterations = 0;
+
+    public HerniaPBDRodController_6 safe;
+
+    private System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
+    // Start is called before the first frame update
+    void Start()
+    {
+        // Initialise and configure SerialPort
+        arduinoPort = new SerialPort(portName);
+        arduinoPort.BaudRate = baudRate;
+        arduinoPort.Parity = parityType;
+        arduinoPort.StopBits = stopBitsType;
+        arduinoPort.DataBits = (int)dataBitsType;
+        arduinoPort.Handshake = handshakeType;
+        arduinoPort.ReadTimeout = readTimeout;
+        arduinoPort.WriteTimeout = writeTimeout;
+
+        // Open Serial Port
+        arduinoPort.Open();
+        quitting = false;
+
+        // Initialise Port Writing Thread 
+        portWritingThread = new Thread(writeArduino);
+       
+        portWritingThread.Start();
+
+
+        
+    }
+
+
+
+
+    void writeArduino()
+    {
+        sw.Start();
+        while (!quitting)
+        {
+            
+
+            //toWrite is computed on another script on another thread
+            //locking prevents both scripts accessing the resource at the same time
+            string toWrite2 = null;
+            lock (toWriteLock)
+            {
+                toWrite2 = toWrite;
+            }
+            //Unity cannot write a locked resource to the serial port so another variable toWrite2 is created
+            arduinoPort.WriteLine(toWrite2);
+
+
+            iterations++;
+
+            if (sw.ElapsedMilliseconds > 1000.0f)
+            {
+                averageTime = (double)sw.ElapsedMilliseconds / iterations;
+                //fixedIterationsCount = (int)(1000.0f / averageTime / 60.0f);
+                sw.Reset();
+                sw.Start();
+
+                iterations = 0;
+                //Display the update rate
+                Debug.Log(" SerialWrite Rate: " + averageTime + "ms [" + (int)(1000.0 / averageTime) + " Hz]");
+            }
+        }
+        
+    }
+
+
+
+    private void OnApplicationQuit()
+    {
+        quitting = true;
+        Thread.Sleep(20);
+        end = "0,0;0:0";
+        arduinoPort.WriteLine(end.ToString());
+
+        // Close SerialPort communication
+        arduinoPort.Close();
+    }
+}
+© 2019 GitHub, Inc.
+Terms
+Privacy
+Security
+Status
+Help
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
